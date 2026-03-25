@@ -3,13 +3,27 @@ package bt.edu.gcit.usermicroservice.rest;
 import bt.edu.gcit.usermicroservice.entity.User;
 import bt.edu.gcit.usermicroservice.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import java.util.Map;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import java.io.IOException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import bt.edu.gcit.usermicroservice.entity.Role;
+import java.util.Set;
 import java.util.List;
 
 @RestController
@@ -22,9 +36,56 @@ public class UserRestController {
         this.userService = userService;
     }
 
-    @PostMapping("/users")
-    public User save(@RequestBody User user) {
-        return userService.save(user);
+ @PostMapping(value = "/users", consumes = "multipart/form-data")
+ public ResponseEntity<?> save(@RequestPart("firstName") @Valid @NotNull String firstName,
+ @RequestPart("lastName") @Valid @NotNull String lastName,
+ @RequestPart("email") @Valid @NotNull String email,
+ @RequestPart("password") @Valid @NotNull String password,
+ @RequestPart("photo") @Valid @NotNull MultipartFile photo,
+ @RequestPart("roles") @Valid @NotNull String rolesJson)
+ {
+ try {
+ // Create a new User object
+ User user = new User();
+ user.setFirstName(firstName);
+ user.setLastName(lastName);
+ user.setEmail(email);
+ user.setPassword(password);
+ // user.setRoles(roles);
+ // Parse the roles JSON string into a Set<Role>
+ ObjectMapper objectMapper = new ObjectMapper();
+ Set<Role> roles = objectMapper.readValue(rolesJson, new
+TypeReference<Set<Role>>(){});
+user.setRoles(roles);
+ System.out.println("Uploading photo");
+
+ // Save the user and get the ID
+ User savedUser = userService.save(user);
+
+ // Upload the user photo
+ System.out.println("Uploadingphoto"+savedUser.getId().intValue());
+ userService.uploadUserPhoto(savedUser.getId().intValue(),
+photo);
+
+ // Return the saved user
+ return ResponseEntity.ok(savedUser);
+ } catch (RuntimeException e) {
+     // Handle duplicate email or other runtime exceptions
+     return ResponseEntity.badRequest().body(e.getMessage());
+ } catch (IOException e) {
+ // Handle the exception
+ return ResponseEntity.status(500).body("Error while uploading photo: " + e.getMessage());
+ }
+ }
+
+    // @PostMapping("/users")
+    // public User save(@RequestBody User user) {
+    // return userService.save(user);
+    // }
+    @GetMapping("/users/checkDuplicateEmail")
+    public ResponseEntity<Boolean> checkDuplicateEmail(@RequestParam String email) {
+        boolean isDuplicate = userService.isEmailDuplicate(email);
+        return ResponseEntity.ok(isDuplicate);
     }
 
     @GetMapping("/users")
@@ -32,12 +93,36 @@ public class UserRestController {
         return userService.findAll();
     }
 
-    @GetMapping("/users/{id}")
-    public ResponseEntity<User> findById(@PathVariable Long id) {
-        User user = userService.findById(id);
-        if (user == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(user);
+    /**
+     * Updates a user with the given ID using the provided User object.
+     *
+     * @param id          the ID of the user to be updated
+     * @param updatedUser the User object containing the updated information
+     * @return the updated User object
+     */
+    @PutMapping("/users/{id}")
+    public User updateUser(@PathVariable int id, @RequestBody User updatedUser) {
+        return userService.updateUser(id, updatedUser);
+    }
+
+    @DeleteMapping("/users/{id}")
+    public void deleteUser(@PathVariable int id) {
+        userService.deleteById(id);
+    }
+
+    /**
+     * Update the enabled status of a user with the specified id
+     *
+     * @param id      The ID of the user to update
+     * @param enabled The new enabled status
+     * @return OK if the update was successful
+     */
+    @PutMapping("/users/{id}/enabled")
+    public ResponseEntity<?> updateUserEnabledStatus(
+            @PathVariable int id, @RequestBody Map<String, Boolean> requestBody) {
+        Boolean enabled = requestBody.get("enabled");
+        userService.updateUserEnabledStatus(id, enabled);
+        System.out.println("User enabled status updated successfully");
+        return ResponseEntity.ok().build();
     }
 }
